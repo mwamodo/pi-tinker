@@ -1,0 +1,11 @@
+{
+    "name": "pi-tinker",
+    "version": "0.0.1",
+    "description": "pi coding agent commands, skills, extensions, and themes.",
+    "type": "module",
+    "pi": {
+        "skills": [
+            "./skills"
+        ]
+    }
+}
