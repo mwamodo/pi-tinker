@@ -49,6 +49,7 @@ If needed:
 Treat any caller-provided arguments as commit guidance.
 
 ### Freeform instructions
+
 Use them to shape:
 - commit type
 - scope
@@ -56,11 +57,13 @@ Use them to shape:
 - optional body
 
 ### File paths or globs
+
 If specific files or globs are provided:
 - Limit inspection, staging, and commit creation to those files only
 - Do NOT include any other modified files unless the user explicitly asks
 
 ### Mixed input
+
 If both files and instructions are provided, honor both.
 
 ## Procedure
