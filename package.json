@@ -4,8 +4,19 @@
     "description": "pi coding agent commands, skills, extensions, and themes.",
     "type": "module",
     "pi": {
+        "extensions": [
+            "./extensions"
+        ],
         "skills": [
             "./skills"
         ]
+    },
+    "peerDependencies": {
+        "@mariozechner/pi-coding-agent": "^0.70.5",
+        "@mariozechner/pi-tui": "^0.70.5"
+    },
+    "devDependencies": {
+        "@mariozechner/pi-coding-agent": "^0.70.5",
+        "@mariozechner/pi-tui": "^0.70.5"
     }
 }
