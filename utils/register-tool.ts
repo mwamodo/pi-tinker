@@ -1,8 +1,9 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
 /**
- * Workaround for pi 0.70.0 + TypeBox 1.x TS2589 type depth issue.
- * Use this instead of pi.registerTool() until pi ships a fix.
+ * Workaround for TypeScript TS2589 type depth issue with TypeBox 1.x
+ * schemas. Use this instead of pi.registerTool() when defining complex
+ * tool parameter schemas that trigger excessively deep type instantiation.
  */
 export function registerTool<T>(pi: ExtensionAPI, tool: T): void {
 	(pi as any).registerTool(tool);
