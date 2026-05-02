@@ -5,10 +5,14 @@
     "type": "module",
     "pi": {
         "extensions": [
-            "./extensions"
+            "./extensions",
+            "./subagent/index.ts"
         ],
         "skills": [
             "./skills"
+        ],
+        "prompts": [
+            "./subagent/prompts"
         ]
     },
     "peerDependencies": {
