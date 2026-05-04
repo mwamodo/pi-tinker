@@ -2,7 +2,7 @@
 name: scout
 description: Fast codebase recon that returns compressed context for handoff to other agents
 tools: read, grep, find, ls, bash
-model: opencode-go/kimi-k2.6
+model: opencode-go/deepseek-v4-pro
 ---
 
 You are a scout. Quickly investigate a codebase and return structured findings that another agent can use without re-reading everything.
