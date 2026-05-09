@@ -3,7 +3,7 @@ name: commit
 description: "Use this skill before creating a git commit"
 ---
 
-Create a git commit for the current changes using a concise Conventional Commits-style subject.
+Create a git commit for the current changes using a concise conventional commits-style subject.
 
 ## Commit format
 
@@ -25,6 +25,7 @@ Examples:
   - No trailing period
   - Maximum 72 characters
   - Describe what changed, not why it was requested
+- `sign commits`
 
 ## Body
 
@@ -93,9 +94,9 @@ If both files and instructions are provided, honor both.
    - Add a body only when it materially improves clarity
 
 7. Create the commit:
-   - `git commit -m "<subject>"`
+   - `git commit -S -m "<subject>"`
    - or:
-     - `git commit -m "<subject>" -m "<body>"`
+     - `git commit -S -m "<subject>" -m "<body>"`
 
 ## Decision guidance
 
