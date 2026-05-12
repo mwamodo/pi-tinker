@@ -6,6 +6,7 @@
  * - Review against a base branch (PR style)
  * - Review uncommitted changes
  * - Review a specific commit
+ * - Review a git worktree
  * - Shared custom review instructions (applied to all review modes when configured)
  *
  * Usage:
@@ -16,6 +17,7 @@
  * - `/review branch main` - review against main branch
  * - `/review commit abc123` - review specific commit
  * - `/review folder src docs` - review specific folders/files (snapshot, not diff)
+ * - `/review worktree /path/to/worktree [origin/main]` - review a worktree diff
  * - `/review` selector includes Add/Remove custom review instructions (applies to all modes)
  * - `/review --extra "focus on performance regressions"` - add extra review instruction (works with any mode)
  *
@@ -355,7 +357,8 @@ type ReviewTarget =
 	| { type: "baseBranch"; branch: string }
 	| { type: "commit"; sha: string; title?: string }
 	| { type: "pullRequest"; prNumber: number; baseBranch: string; title: string }
-	| { type: "folder"; paths: string[] };
+	| { type: "folder"; paths: string[] }
+	| { type: "worktree"; worktreePath: string; baseRef: string };
 
 // prompts (adapted from Codex)
 const UNCOMMITTED_PROMPT =
@@ -383,6 +386,12 @@ const PULL_REQUEST_PROMPT_FALLBACK =
 
 const FOLDER_REVIEW_PROMPT =
 	"Review the code in the following paths: {paths}. This is a snapshot review (not a diff). Read the files directly in these paths and provide prioritized, actionable findings.";
+
+const WORKTREE_PROMPT_WITH_MERGE_BASE =
+	"Review the code changes in the git worktree at '{worktreePath}' against base ref '{baseRef}'. The merge base commit for this comparison is {mergeBaseSha}. Use `git -C {quotedWorktreePath} diff {mergeBaseSha}` and related `git -C {quotedWorktreePath}` commands to inspect tracked changes. Also run `git -C {quotedWorktreePath} status --porcelain` and `git -C {quotedWorktreePath} ls-files --others --exclude-standard` so untracked files are included in the review. When reading files, use absolute paths under '{worktreePath}'. Provide prioritized, actionable findings.";
+
+const WORKTREE_PROMPT_FALLBACK =
+	"Review the code changes in the git worktree at '{worktreePath}' against base ref '{baseRef}'. Start by finding the merge base with `MERGE_BASE=$(git -C {quotedWorktreePath} merge-base HEAD {baseRef})`, then run `git -C {quotedWorktreePath} diff $MERGE_BASE` to inspect tracked changes against that SHA. Also run `git -C {quotedWorktreePath} status --porcelain` and `git -C {quotedWorktreePath} ls-files --others --exclude-standard` so untracked files are included in the review. When reading files, use absolute paths under '{worktreePath}'. Provide prioritized, actionable findings.";
 
 // the detailed review rubric (adapted from Codex's review_prompt.md)
 const REVIEW_RUBRIC = `# Review Guidelines
@@ -540,6 +549,7 @@ async function loadProjectReviewGuidelines(cwd: string): Promise<string | null> 
 async function getMergeBase(
 	pi: ExtensionAPI,
 	branch: string,
+	cwd?: string,
 ): Promise<string | null> {
 	try {
 		// first try to get the upstream tracking branch
@@ -547,17 +557,17 @@ async function getMergeBase(
 			"rev-parse",
 			"--abbrev-ref",
 			`${branch}@{upstream}`,
-		]);
+		], { cwd });
 
 		if (upstreamCode === 0 && upstream.trim()) {
-			const { stdout: mergeBase, code } = await pi.exec("git", ["merge-base", "HEAD", upstream.trim()]);
+			const { stdout: mergeBase, code } = await pi.exec("git", ["merge-base", "HEAD", upstream.trim()], { cwd });
 			if (code === 0 && mergeBase.trim()) {
 				return mergeBase.trim();
 			}
 		}
 
 		// fall back to using the branch directly
-		const { stdout: mergeBase, code } = await pi.exec("git", ["merge-base", "HEAD", branch]);
+		const { stdout: mergeBase, code } = await pi.exec("git", ["merge-base", "HEAD", branch], { cwd });
 		if (code === 0 && mergeBase.trim()) {
 			return mergeBase.trim();
 		}
@@ -708,6 +718,10 @@ async function getDefaultBranch(pi: ExtensionAPI): Promise<string> {
 	return "main"; // default fallback
 }
 
+function shellQuote(value: string): string {
+	return `'${value.replace(/'/g, `'"'"'`)}'`;
+}
+
 /**
  * Build the review prompt based on target
  */
@@ -754,6 +768,24 @@ async function buildReviewPrompt(
 
 		case "folder":
 			return FOLDER_REVIEW_PROMPT.replace("{paths}", target.paths.join(", "));
+
+		case "worktree": {
+			const worktreePath = path.resolve(target.worktreePath);
+			const mergeBase = await getMergeBase(pi, target.baseRef, worktreePath);
+			const template = mergeBase ? WORKTREE_PROMPT_WITH_MERGE_BASE : WORKTREE_PROMPT_FALLBACK;
+			let prompt = template
+				.replace(/{worktreePath}/g, worktreePath)
+				.replace(/{quotedWorktreePath}/g, shellQuote(worktreePath))
+				.replace(/{baseRef}/g, target.baseRef);
+			if (mergeBase) {
+				prompt = prompt.replace(/{mergeBaseSha}/g, mergeBase);
+			}
+			const metadata: Record<string, unknown> = {
+				worktreePath,
+				baseRef: target.baseRef,
+			};
+			return `${prompt}\n\n${formatPromptDataBlock("Worktree metadata", metadata)}`;
+		}
 	}
 }
 
@@ -791,6 +823,9 @@ function getUserFacingHint(target: ReviewTarget): string {
 			const joined = target.paths.join(", ");
 			return joined.length > 40 ? `folders: ${joined.slice(0, 37)}...` : `folders: ${joined}`;
 		}
+
+		case "worktree":
+			return `worktree ${path.basename(target.worktreePath)} against ${target.baseRef}`;
 	}
 }
 
@@ -862,6 +897,7 @@ const REVIEW_PRESETS = [
 	{ value: "commit", label: "Review a commit", description: "" },
 	{ value: "pullRequest", label: "Review a pull request", description: "(GitHub PR)" },
 	{ value: "folder", label: "Review a folder (or more)", description: "(snapshot, not diff)" },
+	{ value: "worktree", label: "Review a worktree", description: "(path)" },
 ] as const;
 
 const TOGGLE_LOOP_FIXING_VALUE = "toggleLoopFixing" as const;
@@ -1048,6 +1084,12 @@ export default function reviewExtension(pi: ExtensionAPI) {
 
 				case "folder": {
 					const target = await showFolderInput(ctx);
+					if (target) return target;
+					break;
+				}
+
+				case "worktree": {
+					const target = await showWorktreeInput(ctx);
 					if (target) return target;
 					break;
 				}
@@ -1308,6 +1350,24 @@ export default function reviewExtension(pi: ExtensionAPI) {
 		return { type: "folder", paths };
 	}
 
+	async function showWorktreeInput(ctx: ExtensionContext): Promise<ReviewTarget | null> {
+		const result = await ctx.ui.editor(
+			"Enter worktree path. Optional base ref after a space (default: origin/main):",
+			"",
+		);
+
+		if (!result?.trim()) return null;
+		const tokens = tokenizeArgs(result.trim());
+		const ref = tokens[0];
+		if (!ref) return null;
+
+		return {
+			type: "worktree",
+			worktreePath: path.resolve(ctx.cwd, ref.replace(/^~(?=$|\/)/, process.env.HOME ?? "~")),
+			baseRef: tokens[1] ?? "origin/main",
+		};
+	}
+
 	/**
 	 * Show PR input and handle checkout
 	 */
@@ -1526,7 +1586,7 @@ export default function reviewExtension(pi: ExtensionAPI) {
 		return tokens;
 	}
 
-	function parseArgs(args: string | undefined): ParsedReviewArgs {
+	function parseArgs(args: string | undefined, ctx: ExtensionContext): ParsedReviewArgs {
 		if (!args?.trim()) return { target: null };
 
 		const rawParts = tokenizeArgs(args.trim());
@@ -1581,6 +1641,19 @@ export default function reviewExtension(pi: ExtensionAPI) {
 				const paths = parseReviewPaths(parts.slice(1).join(" "));
 				if (paths.length === 0) return { target: null, extraInstruction };
 				return { target: { type: "folder", paths }, extraInstruction };
+			}
+
+			case "worktree": {
+				const worktreePath = parts[1];
+				if (!worktreePath) return { target: null, extraInstruction };
+				return {
+					target: {
+						type: "worktree",
+						worktreePath: path.resolve(ctx.cwd, worktreePath.replace(/^~(?=$|\/)/, process.env.HOME ?? "~")),
+						baseRef: parts[2] ?? "origin/main",
+					},
+					extraInstruction,
+				};
 			}
 
 			case "pr": {
@@ -1796,7 +1869,7 @@ export default function reviewExtension(pi: ExtensionAPI) {
 			let target: ReviewTarget | null = null;
 			let fromSelector = false;
 			let extraInstruction: string | undefined;
-			const parsed = parseArgs(args);
+			const parsed = parseArgs(args, ctx);
 			if (parsed.error) {
 				ctx.ui.notify(parsed.error, "error");
 				return;
@@ -1837,6 +1910,18 @@ export default function reviewExtension(pi: ExtensionAPI) {
 						continue;
 					}
 					return;
+				}
+
+				if (target.type === "worktree") {
+					const { code } = await pi.exec("git", ["rev-parse", "--git-dir"], { cwd: target.worktreePath });
+					if (code !== 0) {
+						ctx.ui.notify(`Worktree path is not a git repository: ${target.worktreePath}`, "error");
+						if (fromSelector) {
+							target = null;
+							continue;
+						}
+						return;
+					}
 				}
 
 				if (reviewLoopFixingEnabled) {
