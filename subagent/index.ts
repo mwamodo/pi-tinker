@@ -32,11 +32,17 @@ const COLLAPSED_ITEM_COUNT = 10;
 const PACKAGE_AGENTS_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "agents");
 
 function encodeCwdForSessionDir(cwd: string): string {
-    return `--${path.resolve(cwd).replace(/[\\/]/g, "-")}--`;
+    const resolvedCwd = path.resolve(cwd);
+    return `--${resolvedCwd.replace(/^[\\/]/, "").replace(/[\\/:]/g, "-")}--`;
 }
 
-function getSubagentSessionDir(cwd: string): string {
-    return path.join(getAgentDir(), "sessions", "subagents", encodeCwdForSessionDir(cwd));
+function getDefaultProjectSessionDir(cwd: string): string {
+    return path.join(getAgentDir(), "sessions", encodeCwdForSessionDir(cwd));
+}
+
+function getSubagentSessionDir(parentSessionDir: string | undefined, fallbackCwd: string): string {
+    const sessionDir = parentSessionDir ? path.resolve(parentSessionDir) : getDefaultProjectSessionDir(fallbackCwd);
+    return path.join(sessionDir, "subagents");
 }
 
 function formatTokens(count: number): string {
@@ -239,6 +245,7 @@ type OnUpdateCallback = (partial: AgentToolResult<SubagentDetails>) => void;
 
 async function runSingleAgent(
     defaultCwd: string,
+    parentSessionDir: string | undefined,
     agents: AgentConfig[],
     agentName: string,
     task: string,
@@ -265,7 +272,7 @@ async function runSingleAgent(
     }
 
     const effectiveCwd = cwd ?? defaultCwd;
-    const subagentSessionDir = getSubagentSessionDir(effectiveCwd);
+    const subagentSessionDir = getSubagentSessionDir(parentSessionDir, effectiveCwd);
     const args: string[] = ["--mode", "json", "-p", "--session-dir", subagentSessionDir];
     if (agent.model) args.push("--model", agent.model);
     if (agent.tools && agent.tools.length > 0) args.push("--tools", agent.tools.join(","));
@@ -458,6 +465,7 @@ export default function (pi: ExtensionAPI) {
             const discovery = discoverAgents(ctx.cwd, agentScope, PACKAGE_AGENTS_DIR);
             const agents = discovery.agents;
             const confirmProjectAgents = params.confirmProjectAgents ?? true;
+            const parentSessionDir = ctx.sessionManager.getSessionDir();
 
             const hasChain = (params.chain?.length ?? 0) > 0;
             const hasTasks = (params.tasks?.length ?? 0) > 0;
@@ -536,6 +544,7 @@ export default function (pi: ExtensionAPI) {
 
                     const result = await runSingleAgent(
                         ctx.cwd,
+                        parentSessionDir,
                         agents,
                         step.agent,
                         taskWithContext,
@@ -610,6 +619,7 @@ export default function (pi: ExtensionAPI) {
                 const results = await mapWithConcurrencyLimit(params.tasks, MAX_CONCURRENCY, async (t, index) => {
                     const result = await runSingleAgent(
                         ctx.cwd,
+                        parentSessionDir,
                         agents,
                         t.agent,
                         t.task,
@@ -650,6 +660,7 @@ export default function (pi: ExtensionAPI) {
             if (params.agent && params.task) {
                 const result = await runSingleAgent(
                     ctx.cwd,
+                    parentSessionDir,
                     agents,
                     params.agent,
                     params.task,
