@@ -3,7 +3,7 @@ import { access } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
 import { promisify } from "node:util";
 import { Type } from "typebox";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 import { registerTool } from "../utils/register-tool.ts";
 import { resolveLaravelAppPath, toRelativeAppPath } from "../utils/project.ts";
